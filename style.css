@@ -141,9 +141,9 @@ video {
     position: absolute;
     width: 60%; /* narrower box to focus only on digits */
     height: 50px; /* tight height to include only the number line */
-    bottom: 38%; /* place slightly above center to match typical ID layout */
+    bottom: 18%; /* place slightly above center to match typical ID layout */
     left: 50%;
-    transform: translateX(-50%);
+    transform: translateX(-20%);
     border: 3px solid #00ccff;
     box-shadow: 0 0 15px #00ccff, inset 0 0 12px rgba(0,204,255,0.12);
     background: rgba(0,0,0,0.15);

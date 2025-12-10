@@ -111,6 +111,67 @@ if (switchCameraBtn) {
     });
 }
 
+// Flashlight/Torch control
+const flashlightBtn = document.getElementById("flashlightBtn");
+let isTorchOn = false;
+
+if (flashlightBtn) {
+    flashlightBtn.addEventListener("click", async () => {
+        try {
+            if (!currentStream) return;
+            
+            const videoTrack = currentStream.getVideoTracks()[0];
+            if (!videoTrack) return;
+
+            const capabilities = videoTrack.getCapabilities();
+            if (!capabilities.torch) {
+                showError("⚠️ الجهاز لا يدعم المصباح الأمامي (Torch)");
+                return;
+            }
+
+            isTorchOn = !isTorchOn;
+            await videoTrack.applyConstraints({
+                advanced: [{ torch: isTorchOn }]
+            });
+
+            flashlightBtn.classList.toggle('active', isTorchOn);
+        } catch (err) {
+            console.warn("Torch control failed:", err.message);
+            showError("⚠️ لم نتمكن من التحكم بالمصباح: " + err.message);
+        }
+    });
+}
+
+// Show flashlight button when camera starts (if back camera and on mobile)
+const origStartCamera = startCameraBtn.onclick;
+startCameraBtn.addEventListener("click", async () => {
+    setTimeout(() => {
+        if (flashlightBtn && currentFacingMode === "environment") {
+            flashlightBtn.style.display = "flex";
+        } else if (flashlightBtn) {
+            flashlightBtn.style.display = "none";
+            isTorchOn = false;
+            flashlightBtn.classList.remove('active');
+        }
+    }, 500);
+});
+
+// Update flashlight button visibility when switching camera
+const origSwitchCamera = switchCameraBtn.onclick;
+if (switchCameraBtn) {
+    const origEvent = switchCameraBtn.addEventListener("click", () => {
+        setTimeout(() => {
+            if (flashlightBtn && currentFacingMode === "environment") {
+                flashlightBtn.style.display = "flex";
+            } else if (flashlightBtn) {
+                flashlightBtn.style.display = "none";
+                isTorchOn = false;
+                flashlightBtn.classList.remove('active');
+            }
+        }, 500);
+    });
+}
+
 // ---------------------------
 // 2) التقاط الصورة + Crop المستطيل
 // ---------------------------
@@ -143,11 +204,8 @@ captureBtn.addEventListener("click", async () => {
 
         const imageDataUrl = canvas.toDataURL("image/jpeg");
 
-        // ---------------------------
-        // Preprocess + multi-scale + multi-threshold OCR
-        // Enhanced for Egyptian ID: handles irregular spacing, Arabic digits
-        // ---------------------------
-        function preprocessCanvas(srcCanvas, scale = 2, thresholdOverride = null) {
+        // Simplified + fast preprocessing: histogram equalization + sharpen only
+        function preprocessCanvas(srcCanvas, scale = 2) {
             const w = srcCanvas.width;
             const h = srcCanvas.height;
             const tmp = document.createElement("canvas");
@@ -161,108 +219,51 @@ captureBtn.addEventListener("click", async () => {
                 const data = imgData.data;
                 const pxCount = tmp.width * tmp.height;
 
-                // convert to grayscale and collect min/max
+                // convert to grayscale
                 const gray = new Uint8ClampedArray(pxCount);
-                let sum = 0, minVal = 255, maxVal = 0;
+                let minVal = 255, maxVal = 0;
                 for (let i = 0, p = 0; i < data.length; i += 4, p++) {
                     const r = data[i], g = data[i + 1], b = data[i + 2];
                     const v = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
                     gray[p] = v;
-                    sum += v;
                     minVal = Math.min(minVal, v);
                     maxVal = Math.max(maxVal, v);
                 }
 
-                const avg = Math.round(sum / pxCount) || 128;
-
-                // Histogram equalization for contrast
-                const equalize = (arr) => {
-                    const out = new Uint8ClampedArray(arr.length);
-                    const range = maxVal - minVal || 1;
-                    for (let p = 0; p < arr.length; p++) {
-                        out[p] = Math.round(((arr[p] - minVal) / range) * 255);
-                    }
-                    return out;
-                };
-                let equalized = equalize(gray);
-
-                // Strong sharpen for digit edges
-                const sharpen = (arr, w, h) => {
-                    const out = new Uint8ClampedArray(arr.length);
-                    const k = [0, -2, 0, -2, 9, -2, 0, -2, 0];
-                    for (let y = 1; y < h - 1; y++) {
-                        for (let x = 1; x < w - 1; x++) {
-                            let s = 0, idx = 0;
-                            for (let ky = -1; ky <= 1; ky++) {
-                                for (let kx = -1; kx <= 1; kx++) {
-                                    s += arr[(y + ky) * w + (x + kx)] * k[idx++];
-                                }
-                            }
-                            out[y * w + x] = Math.min(255, Math.max(0, s));
-                        }
-                    }
-                    return out;
-                };
-                let sharpened = sharpen(equalized, tmp.width, tmp.height);
-
-                // Dilate multiple times to fill gaps and connect digits
-                const dilate = (arr, w, h, iterations = 1) => {
-                    let out = arr;
-                    for (let iter = 0; iter < iterations; iter++) {
-                        const tmp = new Uint8ClampedArray(out.length);
-                        for (let y = 1; y < h - 1; y++) {
-                            for (let x = 1; x < w - 1; x++) {
-                                let maxVal = 0;
-                                for (let ky = -1; ky <= 1; ky++) {
-                                    for (let kx = -1; kx <= 1; kx++) {
-                                        maxVal = Math.max(maxVal, out[(y + ky) * w + (x + kx)]);
-                                    }
-                                }
-                                tmp[y * w + x] = maxVal;
-                            }
-                        }
-                        out = tmp;
-                    }
-                    return out;
-                };
-                let dilated = dilate(sharpened, tmp.width, tmp.height, 2); // 2 iterations
-
-                // Erode to clean up small noise
-                const erode = (arr, w, h) => {
-                    const out = new Uint8ClampedArray(arr.length);
-                    for (let y = 1; y < h - 1; y++) {
-                        for (let x = 1; x < w - 1; x++) {
-                            let minVal = 255;
-                            for (let ky = -1; ky <= 1; ky++) {
-                                for (let kx = -1; kx <= 1; kx++) {
-                                    minVal = Math.min(minVal, arr[(y + ky) * w + (x + kx)]);
-                                }
-                            }
-                            out[y * w + x] = minVal;
-                        }
-                    }
-                    return out;
-                };
-                let eroded = erode(dilated, tmp.width, tmp.height);
-
-                // choose threshold
-                let thresh = 128; // midpoint after equalization
-                if (thresholdOverride && typeof thresholdOverride === 'number') {
-                    thresh = Math.round(thresholdOverride);
+                // Histogram equalization (fast contrast stretch)
+                const range = maxVal - minVal || 1;
+                for (let p = 0; p < pxCount; p++) {
+                    gray[p] = Math.round(((gray[p] - minVal) / range) * 255);
                 }
 
-                // write back binary image
+                // Simple sharpen kernel (fast)
+                const out = new Uint8ClampedArray(pxCount);
+                const k = [0, -1, 0, -1, 5, -1, 0, -1, 0];
+                for (let y = 1; y < tmp.height - 1; y++) {
+                    for (let x = 1; x < tmp.width - 1; x++) {
+                        let s = 0, idx = 0;
+                        for (let ky = -1; ky <= 1; ky++) {
+                            for (let kx = -1; kx <= 1; kx++) {
+                                s += gray[(y + ky) * tmp.width + (x + kx)] * k[idx++];
+                            }
+                        }
+                        out[y * tmp.width + x] = Math.min(255, Math.max(0, s));
+                    }
+                }
+
+                // Binary threshold (midpoint after equalization)
+                const thresh = 128;
                 for (let p = 0, i = 0; p < pxCount; p++, i += 4) {
-                    const v = eroded[p] < thresh ? 0 : 255;
+                    const v = out[p] < thresh ? 0 : 255;
                     data[i] = data[i + 1] = data[i + 2] = v;
                     data[i + 3] = 255;
                 }
 
                 ctx.putImageData(imgData, 0, 0);
-                return { dataUrl: tmp.toDataURL("image/jpeg", 0.95), avg };
+                return tmp.toDataURL("image/jpeg", 0.95);
             } catch (e) {
                 console.warn('preprocessCanvas failed:', e);
-                return { dataUrl: tmp.toDataURL("image/jpeg", 0.95), avg: null };
+                return srcCanvas.toDataURL("image/jpeg", 0.95);
             }
         }
 
@@ -288,46 +289,43 @@ captureBtn.addEventListener("click", async () => {
             logger: m => console.log('TESSERACT:', m)
         };
 
-        async function recognizeAtScales(scales = [3, 4, 5]) {
+        async function recognizeAtScales(scales = [3, 4]) {
             let best = null;
             
-            // Try different PSM modes for better digit recognition
-            const psmModes = ["6", "7", "8"]; // 6=single block, 7=single line, 8=single word
+            // SIMPLIFIED: Use only PSM 8 (single word/line) for fast digit recognition
+            const psm = "8";
+            const lang = "ara+eng";
             
-            for (const psm of psmModes) {
-                for (const s of scales) {
-                    const base = preprocessCanvas(canvas, s);
-                    const thresholds = [100, 128, 150];
+            for (const s of scales) {
+                try {
+                    const preprocessed = preprocessCanvas(canvas, s);
+                    console.log(`[OCR] Attempting scale ${s}...`);
+                    
+                    const tesseractConfig = { 
+                        ...baseConfig, 
+                        tessedit_pageseg_mode: psm,
+                        tessedit_char_whitelist: "0123456789٠١٢٣٤٥٦٧٨٩"
+                    };
+                    const { data: { text } } = await Tesseract.recognize(preprocessed, lang, tesseractConfig);
+                    
+                    // Post-process: remove spaces, fuzzy match common misreads
+                    const postProcessed = postProcessOCRText(text);
+                    const digits = normalizeDigits(postProcessed);
+                    
+                    console.log(`[OCR] scale ${s} -> raw: "${text}" -> processed: "${digits}"`);
 
-                    for (const t of thresholds) {
-                        const pre = preprocessCanvas(canvas, s, t);
-                        try {
-                            // Try both "ara+eng" and "ara" for better Arabic support
-                            for (const lang of ["ara+eng", "ara"]) {
-                                const tesseractConfig = { ...baseConfig, tessedit_pageseg_mode: psm };
-                                const { data: { text } } = await Tesseract.recognize(pre.dataUrl, lang, tesseractConfig);
-                                
-                                // Post-process: remove spaces, fuzzy match common misreads
-                                const postProcessed = postProcessOCRText(text);
-                                const digits = normalizeDigits(postProcessed);
-                                
-                                console.log('OCR psm', psm, 'scale', s, 'thresh', t, 'lang', lang, '-> raw:', text, '-> processed:', digits);
-
-                                const m = digits.match(/([1-3]\d{13})/);
-                                if (m && m[1]) {
-                                    console.log('✅ Found valid ID:', m[1]);
-                                    return { id: m[1], text, digits, scale: s, thresh: t, psm, lang };
-                                }
-
-                                // Keep best candidate by digit count
-                                if (!best || (digits.length > (best.digits || "").length)) {
-                                    best = { id: null, text, digits, scale: s, thresh: t, psm, lang };
-                                }
-                            }
-                        } catch (e) {
-                            console.warn('Tesseract failed at psm', psm, 'scale', s, 'thresh', t);
-                        }
+                    const m = digits.match(/([1-3]\d{13})/);
+                    if (m && m[1]) {
+                        console.log('✅ Found valid ID:', m[1]);
+                        return { id: m[1], text, digits, scale: s };
                     }
+
+                    // Keep best candidate by digit count
+                    if (!best || (digits.length > (best.digits || "").length)) {
+                        best = { id: null, text, digits, scale: s };
+                    }
+                } catch (e) {
+                    console.warn(`[OCR] Scale ${s} failed:`, e.message);
                 }
             }
             return best;

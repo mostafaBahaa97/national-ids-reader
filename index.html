@@ -1,0 +1,36 @@
+<!DOCTYPE html>
+<html lang="ar">
+<head>
+<meta charset="UTF-8">
+<title>ماسح الرقم القومي</title>
+<link rel="stylesheet" href="style.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+</head>
+<body>
+<div class="container">
+    <h1>ماسح الرقم القومي</h1>
+
+    <!-- زر فتح الكاميرا -->
+    <button id="startCameraBtn">فتح الكاميرا</button>
+
+    <div class="card-camera">
+        <video id="camera" autoplay playsinline></video>
+        <div class="scan-box"></div>
+    </div>
+
+    <button id="captureBtn">التقاط الرقم</button>
+    <div class="manual-entry">
+        <label for="manualIdInput" class="visually-hidden">الرقم القومي</label>
+        <input id="manualIdInput" class="manual-input" placeholder="أدخل الرقم القومي (14 رقمًا)" maxlength="14" inputmode="numeric" pattern="[1-3][0-9]{13}" autocomplete="off" />
+        <button id="manualAddBtn">إضافة يدويًا</button>
+    </div>
+    <div id="manualError" class="error-message" style="display:none; color:red; font-size:0.9em; margin-top:4px;">الرقم القومى خطا</div>
+    <div id="loader" class="loader" style="display:none;"></div>
+    <div id="resultBox" class="result"></div>
+</div>
+
+<canvas id="canvas" style="display:none;"></canvas>
+<script src="script.js"></script>
+</body>
+</html>

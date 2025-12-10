@@ -145,7 +145,7 @@ captureBtn.addEventListener("click", async () => {
 
         // ---------------------------
         // Preprocess + multi-scale + multi-threshold OCR
-        // - upscale, histogram equalization, sharpen, morphology
+        // Enhanced for Egyptian ID: handles irregular spacing, Arabic digits
         // ---------------------------
         function preprocessCanvas(srcCanvas, scale = 2, thresholdOverride = null) {
             const w = srcCanvas.width;
@@ -161,7 +161,7 @@ captureBtn.addEventListener("click", async () => {
                 const data = imgData.data;
                 const pxCount = tmp.width * tmp.height;
 
-                // convert to grayscale and collect min/max for equalization
+                // convert to grayscale and collect min/max
                 const gray = new Uint8ClampedArray(pxCount);
                 let sum = 0, minVal = 255, maxVal = 0;
                 for (let i = 0, p = 0; i < data.length; i += 4, p++) {
@@ -175,7 +175,7 @@ captureBtn.addEventListener("click", async () => {
 
                 const avg = Math.round(sum / pxCount) || 128;
 
-                // Histogram equalization (contrast stretching) to improve contrast
+                // Histogram equalization for contrast
                 const equalize = (arr) => {
                     const out = new Uint8ClampedArray(arr.length);
                     const range = maxVal - minVal || 1;
@@ -186,10 +186,10 @@ captureBtn.addEventListener("click", async () => {
                 };
                 let equalized = equalize(gray);
 
-                // Stronger sharpen kernel to enhance digit edges
+                // Strong sharpen for digit edges
                 const sharpen = (arr, w, h) => {
                     const out = new Uint8ClampedArray(arr.length);
-                    const k = [0, -2, 0, -2, 9, -2, 0, -2, 0]; // stronger kernel
+                    const k = [0, -2, 0, -2, 9, -2, 0, -2, 0];
                     for (let y = 1; y < h - 1; y++) {
                         for (let x = 1; x < w - 1; x++) {
                             let s = 0, idx = 0;
@@ -205,33 +205,55 @@ captureBtn.addEventListener("click", async () => {
                 };
                 let sharpened = sharpen(equalized, tmp.width, tmp.height);
 
-                // Simple dilate to fill small holes in digits (morphology)
-                const dilate = (arr, w, h) => {
+                // Dilate multiple times to fill gaps and connect digits
+                const dilate = (arr, w, h, iterations = 1) => {
+                    let out = arr;
+                    for (let iter = 0; iter < iterations; iter++) {
+                        const tmp = new Uint8ClampedArray(out.length);
+                        for (let y = 1; y < h - 1; y++) {
+                            for (let x = 1; x < w - 1; x++) {
+                                let maxVal = 0;
+                                for (let ky = -1; ky <= 1; ky++) {
+                                    for (let kx = -1; kx <= 1; kx++) {
+                                        maxVal = Math.max(maxVal, out[(y + ky) * w + (x + kx)]);
+                                    }
+                                }
+                                tmp[y * w + x] = maxVal;
+                            }
+                        }
+                        out = tmp;
+                    }
+                    return out;
+                };
+                let dilated = dilate(sharpened, tmp.width, tmp.height, 2); // 2 iterations
+
+                // Erode to clean up small noise
+                const erode = (arr, w, h) => {
                     const out = new Uint8ClampedArray(arr.length);
                     for (let y = 1; y < h - 1; y++) {
                         for (let x = 1; x < w - 1; x++) {
-                            let maxVal = 0;
+                            let minVal = 255;
                             for (let ky = -1; ky <= 1; ky++) {
                                 for (let kx = -1; kx <= 1; kx++) {
-                                    maxVal = Math.max(maxVal, arr[(y + ky) * w + (x + kx)]);
+                                    minVal = Math.min(minVal, arr[(y + ky) * w + (x + kx)]);
                                 }
                             }
-                            out[y * w + x] = maxVal;
+                            out[y * w + x] = minVal;
                         }
                     }
                     return out;
                 };
-                let dilated = dilate(sharpened, tmp.width, tmp.height);
+                let eroded = erode(dilated, tmp.width, tmp.height);
 
-                // choose threshold (after equalization, 128 is usually best)
-                let thresh = 128;
+                // choose threshold
+                let thresh = 128; // midpoint after equalization
                 if (thresholdOverride && typeof thresholdOverride === 'number') {
                     thresh = Math.round(thresholdOverride);
                 }
 
-                // write back binary image to imgData
+                // write back binary image
                 for (let p = 0, i = 0; p < pxCount; p++, i += 4) {
-                    const v = dilated[p] < thresh ? 0 : 255;
+                    const v = eroded[p] < thresh ? 0 : 255;
                     data[i] = data[i + 1] = data[i + 2] = v;
                     data[i + 3] = 255;
                 }
@@ -239,39 +261,72 @@ captureBtn.addEventListener("click", async () => {
                 ctx.putImageData(imgData, 0, 0);
                 return { dataUrl: tmp.toDataURL("image/jpeg", 0.95), avg };
             } catch (e) {
-                console.warn('preprocessCanvas: getImageData failed, using scaled copy', e);
+                console.warn('preprocessCanvas failed:', e);
                 return { dataUrl: tmp.toDataURL("image/jpeg", 0.95), avg: null };
             }
         }
 
-        // try multiple scales and thresholds to improve OCR reliability
-        const tesseractConfig = {
+        // Post-process OCR text: handle spacing, fuzzy matching for misread digits
+        function postProcessOCRText(text) {
+            // Remove excessive spaces between digits (handle irregular spacing in Egyptian IDs)
+            let processed = text.replace(/\s+/g, '');
+            
+            // Fuzzy matching: common OCR misreads for Arabic digits
+            // 0 can be read as O, l, I, etc.
+            processed = processed.replace(/[O\-_]/g, '0');
+            // 1 can be read as l, I
+            processed = processed.replace(/[lI]/g, '1');
+            // 8 can be read as B
+            processed = processed.replace(/B/g, '8');
+            
+            return processed;
+        }
+
+        // try multiple scales, thresholds, and language combinations
+        const baseConfig = {
             tessedit_char_whitelist: "0123456789٠١٢٣٤٥٦٧٨٩",
-            tessedit_pageseg_mode: "6", // assume single block of text
             logger: m => console.log('TESSERACT:', m)
         };
 
         async function recognizeAtScales(scales = [3, 4, 5]) {
             let best = null;
-            for (const s of scales) {
-                const base = preprocessCanvas(canvas, s);
-                const thresholds = [100, 128, 150]; // fixed thresholds work better after equalization
+            
+            // Try different PSM modes for better digit recognition
+            const psmModes = ["6", "7", "8"]; // 6=single block, 7=single line, 8=single word
+            
+            for (const psm of psmModes) {
+                for (const s of scales) {
+                    const base = preprocessCanvas(canvas, s);
+                    const thresholds = [100, 128, 150];
 
-                for (const t of thresholds) {
-                    const pre = preprocessCanvas(canvas, s, t);
-                    try {
-                        const { data: { text } } = await Tesseract.recognize(pre.dataUrl, "ara+eng", tesseractConfig);
-                        const digits = normalizeDigits(text);
-                        console.log('OCR scale', s, 'thresh', t, 'len:', digits.length, '->', text, '=>', digits);
+                    for (const t of thresholds) {
+                        const pre = preprocessCanvas(canvas, s, t);
+                        try {
+                            // Try both "ara+eng" and "ara" for better Arabic support
+                            for (const lang of ["ara+eng", "ara"]) {
+                                const tesseractConfig = { ...baseConfig, tessedit_pageseg_mode: psm };
+                                const { data: { text } } = await Tesseract.recognize(pre.dataUrl, lang, tesseractConfig);
+                                
+                                // Post-process: remove spaces, fuzzy match common misreads
+                                const postProcessed = postProcessOCRText(text);
+                                const digits = normalizeDigits(postProcessed);
+                                
+                                console.log('OCR psm', psm, 'scale', s, 'thresh', t, 'lang', lang, '-> raw:', text, '-> processed:', digits);
 
-                        const m = digits.match(/([1-3]\d{13})/);
-                        if (m && m[1]) return { id: m[1], text, digits, scale: s, thresh: t };
+                                const m = digits.match(/([1-3]\d{13})/);
+                                if (m && m[1]) {
+                                    console.log('✅ Found valid ID:', m[1]);
+                                    return { id: m[1], text, digits, scale: s, thresh: t, psm, lang };
+                                }
 
-                        if (!best || (digits.length > (best.digits || "").length)) {
-                            best = { id: null, text, digits, scale: s, thresh: t };
+                                // Keep best candidate by digit count
+                                if (!best || (digits.length > (best.digits || "").length)) {
+                                    best = { id: null, text, digits, scale: s, thresh: t, psm, lang };
+                                }
+                            }
+                        } catch (e) {
+                            console.warn('Tesseract failed at psm', psm, 'scale', s, 'thresh', t);
                         }
-                    } catch (e) {
-                        console.warn('Tesseract failed at scale', s, 'thresh', t);
                     }
                 }
             }
@@ -288,7 +343,20 @@ captureBtn.addEventListener("click", async () => {
         console.log('OCR final result:', ocrResult);
 
         if (!ocrResult.id) {
-            showError("❌ لم يتم العثور على رقم قومي مكون من 14 رقمًا. يمكنك إدخاله يدويًا.");
+            // No full 14-digit match found, but offer the best candidate in manual input
+            const bestDigits = (ocrResult && ocrResult.digits) ? ocrResult.digits.substring(0, 14) : "";
+            if (bestDigits.length >= 10) {
+                // If we have at least 10 digits, auto-fill the manual input
+                if (manualInput) {
+                    manualInput.value = bestDigits;
+                    manualInput.focus();
+                    showError("⚠️ الرقم غير واضح تماماً. تم ملء أفضل نتيجة في حقل الإدخال - يرجى التحقق والتصحيح إن لزم الأمر.");
+                } else {
+                    showError("❌ لم يتم العثور على رقم قومي واضح. يرجى إدخاله يدويًا.");
+                }
+            } else {
+                showError("❌ لم يتم العثور على رقم قومي مكون من 14 رقمًا. يرجى محاولة أخرى أو إدخاله يدويًا.");
+            }
             return;
         }
 

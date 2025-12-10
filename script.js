@@ -16,8 +16,12 @@ const loader = document.getElementById("loader");
 const scanBox = document.querySelector(".scan-box");
 const cameraContainer = document.querySelector(".card-camera");
 const startCameraBtn = document.getElementById("startCameraBtn");
+const switchCameraBtn = document.getElementById("switchCameraBtn");
 const manualInput = document.getElementById("manualIdInput");
 const manualAddBtn = document.getElementById("manualAddBtn");
+
+let currentStream = null;
+let currentFacingMode = "environment"; // "environment" = back camera, "user" = front camera
 
 // Normalize Arabic-Indic and Eastern Arabic-Indic digits to ASCII and remove non-digits
 function normalizeDigits(input) {
@@ -69,15 +73,43 @@ if (manualInput) {
 // ---------------------------
 startCameraBtn.addEventListener("click", async () => {
     try {
-        const stream = await navigator.mediaDevices.getUserMedia({ video: true });
+        const stream = await navigator.mediaDevices.getUserMedia({ 
+            video: { facingMode: currentFacingMode } 
+        });
+        currentStream = stream;
         video.srcObject = stream;
 
         cameraContainer.style.display = "block";
         startCameraBtn.style.display = "none";
+        switchCameraBtn.style.display = "flex";
     } catch (err) {
         showError("❌ لم نتمكن من فتح الكاميرا: " + err.message);
     }
 });
+
+// Switch between front and back camera
+if (switchCameraBtn) {
+    switchCameraBtn.addEventListener("click", async () => {
+        try {
+            // Stop current stream
+            if (currentStream) {
+                currentStream.getTracks().forEach(track => track.stop());
+            }
+
+            // Toggle facing mode
+            currentFacingMode = currentFacingMode === "environment" ? "user" : "environment";
+
+            // Start new stream with switched camera
+            const stream = await navigator.mediaDevices.getUserMedia({ 
+                video: { facingMode: currentFacingMode } 
+            });
+            currentStream = stream;
+            video.srcObject = stream;
+        } catch (err) {
+            showError("❌ لم نتمكن من تبديل الكاميرا: " + err.message);
+        }
+    });
+}
 
 // ---------------------------
 // 2) التقاط الصورة + Crop المستطيل

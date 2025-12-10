@@ -144,9 +144,10 @@ captureBtn.addEventListener("click", async () => {
         const imageDataUrl = canvas.toDataURL("image/jpeg");
 
         // ---------------------------
-        // Preprocess image to improve OCR (upscale, grayscale, threshold)
+        // Preprocess + multi-scale + multi-threshold OCR
+        // - upscale, histogram equalization, sharpen, morphology
         // ---------------------------
-        function preprocessCanvas(srcCanvas, scale = 2) {
+        function preprocessCanvas(srcCanvas, scale = 2, thresholdOverride = null) {
             const w = srcCanvas.width;
             const h = srcCanvas.height;
             const tmp = document.createElement("canvas");
@@ -158,64 +159,126 @@ captureBtn.addEventListener("click", async () => {
             try {
                 const imgData = ctx.getImageData(0, 0, tmp.width, tmp.height);
                 const data = imgData.data;
-                // convert to grayscale
-                for (let i = 0; i < data.length; i += 4) {
-                    const r = data[i], g = data[i + 1], b = data[i + 2];
-                    const gray = 0.299 * r + 0.587 * g + 0.114 * b;
-                    data[i] = data[i + 1] = data[i + 2] = gray;
-                }
-                // compute average brightness and choose threshold
-                let sum = 0;
-                for (let i = 0; i < data.length; i += 4) sum += data[i];
-                const avg = sum / (data.length / 4) || 128;
-                // clamp threshold to reasonable bounds to avoid extremes
-                const thresh = Math.max(90, Math.min(200, Math.round(avg)));
-                // apply binary threshold
-                for (let i = 0; i < data.length; i += 4) {
-                    const v = data[i] < thresh ? 0 : 255;
-                    data[i] = data[i + 1] = data[i + 2] = v;
-                }
-                ctx.putImageData(imgData, 0, 0);
-            } catch (e) {
-                // getImageData can throw on cross-origin canvases; fallback to scaled copy
-                console.warn('preprocessCanvas: getImageData failed, using scaled copy', e);
-            }
+                const pxCount = tmp.width * tmp.height;
 
-            return tmp.toDataURL("image/jpeg", 0.95);
+                // convert to grayscale and collect min/max for equalization
+                const gray = new Uint8ClampedArray(pxCount);
+                let sum = 0, minVal = 255, maxVal = 0;
+                for (let i = 0, p = 0; i < data.length; i += 4, p++) {
+                    const r = data[i], g = data[i + 1], b = data[i + 2];
+                    const v = Math.round(0.299 * r + 0.587 * g + 0.114 * b);
+                    gray[p] = v;
+                    sum += v;
+                    minVal = Math.min(minVal, v);
+                    maxVal = Math.max(maxVal, v);
+                }
+
+                const avg = Math.round(sum / pxCount) || 128;
+
+                // Histogram equalization (contrast stretching) to improve contrast
+                const equalize = (arr) => {
+                    const out = new Uint8ClampedArray(arr.length);
+                    const range = maxVal - minVal || 1;
+                    for (let p = 0; p < arr.length; p++) {
+                        out[p] = Math.round(((arr[p] - minVal) / range) * 255);
+                    }
+                    return out;
+                };
+                let equalized = equalize(gray);
+
+                // Stronger sharpen kernel to enhance digit edges
+                const sharpen = (arr, w, h) => {
+                    const out = new Uint8ClampedArray(arr.length);
+                    const k = [0, -2, 0, -2, 9, -2, 0, -2, 0]; // stronger kernel
+                    for (let y = 1; y < h - 1; y++) {
+                        for (let x = 1; x < w - 1; x++) {
+                            let s = 0, idx = 0;
+                            for (let ky = -1; ky <= 1; ky++) {
+                                for (let kx = -1; kx <= 1; kx++) {
+                                    s += arr[(y + ky) * w + (x + kx)] * k[idx++];
+                                }
+                            }
+                            out[y * w + x] = Math.min(255, Math.max(0, s));
+                        }
+                    }
+                    return out;
+                };
+                let sharpened = sharpen(equalized, tmp.width, tmp.height);
+
+                // Simple dilate to fill small holes in digits (morphology)
+                const dilate = (arr, w, h) => {
+                    const out = new Uint8ClampedArray(arr.length);
+                    for (let y = 1; y < h - 1; y++) {
+                        for (let x = 1; x < w - 1; x++) {
+                            let maxVal = 0;
+                            for (let ky = -1; ky <= 1; ky++) {
+                                for (let kx = -1; kx <= 1; kx++) {
+                                    maxVal = Math.max(maxVal, arr[(y + ky) * w + (x + kx)]);
+                                }
+                            }
+                            out[y * w + x] = maxVal;
+                        }
+                    }
+                    return out;
+                };
+                let dilated = dilate(sharpened, tmp.width, tmp.height);
+
+                // choose threshold (after equalization, 128 is usually best)
+                let thresh = 128;
+                if (thresholdOverride && typeof thresholdOverride === 'number') {
+                    thresh = Math.round(thresholdOverride);
+                }
+
+                // write back binary image to imgData
+                for (let p = 0, i = 0; p < pxCount; p++, i += 4) {
+                    const v = dilated[p] < thresh ? 0 : 255;
+                    data[i] = data[i + 1] = data[i + 2] = v;
+                    data[i + 3] = 255;
+                }
+
+                ctx.putImageData(imgData, 0, 0);
+                return { dataUrl: tmp.toDataURL("image/jpeg", 0.95), avg };
+            } catch (e) {
+                console.warn('preprocessCanvas: getImageData failed, using scaled copy', e);
+                return { dataUrl: tmp.toDataURL("image/jpeg", 0.95), avg: null };
+            }
         }
 
-        // try multiple scales to improve OCR reliability
+        // try multiple scales and thresholds to improve OCR reliability
         const tesseractConfig = {
             tessedit_char_whitelist: "0123456789٠١٢٣٤٥٦٧٨٩",
-            tessedit_pageseg_mode: "7",
+            tessedit_pageseg_mode: "6", // assume single block of text
             logger: m => console.log('TESSERACT:', m)
         };
 
-        
-
-        async function recognizeAtScales(scales = [2, 3, 4]) {
+        async function recognizeAtScales(scales = [3, 4, 5]) {
             let best = null;
             for (const s of scales) {
-                const dataUrl = preprocessCanvas(canvas, s);
-                try {
-                    const { data: { text } } = await Tesseract.recognize(dataUrl, "ara+eng", tesseractConfig);
-                    const digits = normalizeDigits(text);
-                    console.log('OCR scale', s, '->', text, '=>', digits);
+                const base = preprocessCanvas(canvas, s);
+                const thresholds = [100, 128, 150]; // fixed thresholds work better after equalization
 
-                    const m = digits.match(/([1-3]\d{13})/);
-                    if (m && m[1]) return { id: m[1], text, digits, scale: s };
+                for (const t of thresholds) {
+                    const pre = preprocessCanvas(canvas, s, t);
+                    try {
+                        const { data: { text } } = await Tesseract.recognize(pre.dataUrl, "ara+eng", tesseractConfig);
+                        const digits = normalizeDigits(text);
+                        console.log('OCR scale', s, 'thresh', t, 'len:', digits.length, '->', text, '=>', digits);
 
-                    if (!best || (digits.length > (best.digits || "").length)) {
-                        best = { id: null, text, digits, scale: s };
+                        const m = digits.match(/([1-3]\d{13})/);
+                        if (m && m[1]) return { id: m[1], text, digits, scale: s, thresh: t };
+
+                        if (!best || (digits.length > (best.digits || "").length)) {
+                            best = { id: null, text, digits, scale: s, thresh: t };
+                        }
+                    } catch (e) {
+                        console.warn('Tesseract failed at scale', s, 'thresh', t);
                     }
-                } catch (e) {
-                    console.warn('Tesseract failed at scale', s, e);
                 }
             }
             return best;
         }
 
-        const ocrResult = await recognizeAtScales([2, 3, 4]);
+        const ocrResult = await recognizeAtScales([3, 4, 5]);
 
         if (!ocrResult) {
             showError("❌ فشل التعرف عبر OCR على الصورة");
@@ -244,7 +307,7 @@ captureBtn.addEventListener("click", async () => {
         }
 
         if (exists.length > 0) {
-            return showSuccess("⚠️ الرقم القومي موجود مسبقًا: " + id_number);
+            return showSuccess("⚠️ ⚠️ الرقم القومي موجود مسبقًا:⚠️ ⚠️  " + id_number);
         }
 
         // ---------------------------
@@ -295,7 +358,7 @@ if (manualAddBtn) {
             }
 
             if (exists.length > 0) {
-                return showSuccess("⚠️ الرقم القومي موجود مسبقًا: " + id_number);
+                return showSuccess("⚠️ ⚠️ الرقم القومي موجود مسبقًا:⚠️ ⚠️  " + id_number);
             }
 
             const { error: insertError } = await supabase

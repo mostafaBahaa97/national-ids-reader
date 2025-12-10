@@ -1,81 +1,96 @@
 body {
     font-family: "Cairo", sans-serif;
-    background: #f0f0f5;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     direction: rtl;
     text-align: center;
-    margin:0;
-    padding:0;
+    margin: 0;
+    padding: 10px;
+    min-height: 100vh;
 }
 
 .container {
     max-width: 90vw;
     max-height: 100vh;
     margin: 10px auto;
-    padding: 20px;
+    padding: 24px;
     background: #fff;
-    border-radius: 15px;
-    box-shadow: 0 4px 15px rgba(0,0,0,0.1);
+    border-radius: 20px;
+    box-shadow: 0 8px 32px rgba(0, 0, 0, 0.15);
 }
 
 @media (min-width: 768px) {
     .container {
-        max-width: 600px;
+        max-width: 700px;
         margin: 30px auto;
+        padding: 30px;
     }
 }
 
 h1 {
-    margin: 10px 0 20px 0;
-    font-size: 28px;
+    margin: 10px 0 25px 0;
+    font-size: 32px;
+    color: #333;
+    font-weight: 700;
 }
 
 button {
-    background: #0066ff;
+    background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
     color: white;
-    padding: 14px 24px;
+    padding: 16px 26px;
     border: none;
-    border-radius: 10px;
+    border-radius: 12px;
     font-size: 18px;
     cursor: pointer;
     width: 100%;
-    margin-top: 10px;
-    font-weight: 600;
+    margin-top: 12px;
+    font-weight: 700;
+    transition: transform 0.2s, box-shadow 0.2s;
 }
 
 button:hover {
-    background: #004fcc;
+    transform: translateY(-2px);
+    box-shadow: 0 6px 20px rgba(102, 126, 234, 0.4);
+}
+
+button:active {
+    transform: translateY(0);
 }
 
 .card-camera {
-    display: none; /* نخفي الفيديو والمستطيل لحد الضغط */
+    display: none;
     position: relative;
     width: 100%;
-    height: 400px;
-    margin: 15px 0;
-    border-radius: 12px;
+    height: 520px;
+    margin: 20px 0;
+    border-radius: 16px;
     overflow: hidden;
     background: #000;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.2);
 }
 
 .switch-camera-btn {
     position: absolute;
-    bottom: 10px;
-    left: 10px;
+    bottom: 12px;
+    left: 12px;
     width: auto;
     padding: 10px 14px;
-    background: rgba(0,0,0,0.6);
-    font-size: 20px;
+    background: rgba(102, 126, 234, 0.85);
+    font-size: 22px;
     z-index: 10;
     margin: 0;
     border-radius: 50%;
-    height: 50px;
+    height: 54px;
+    width: 54px;
     display: flex !important;
     align-items: center;
     justify-content: center;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.3);
+    transition: background 0.2s, transform 0.2s;
 }
 
 .switch-camera-btn:hover {
-    background: rgba(0,0,0,0.8);
+    background: rgba(102, 126, 234, 1);
+    transform: scale(1.05);
 }
 
 .manual-entry {
@@ -87,27 +102,30 @@ button:hover {
 
 .manual-entry .manual-input {
     flex: 1 1 auto;
-    padding: 10px 12px;
+    padding: 14px 14px;
     font-size: 18px;
-    border-radius: 10px;
-    border: 1px solid #ddd;
+    border-radius: 12px;
+    border: 2px solid #e0e0e0;
     outline: none;
-    direction: ltr; /* digits read left-to-right for clarity */
+    direction: ltr;
+    transition: border-color 0.2s, box-shadow 0.2s;
 }
 
 .manual-entry .manual-input:focus {
-    border-color: #0066ff;
-    box-shadow: 0 0 0 3px rgba(0,102,255,0.08);
+    border-color: #667eea;
+    box-shadow: 0 0 0 4px rgba(102, 126, 234, 0.1);
 }
 
 .manual-entry button {
-    padding: 10px 14px;
+    padding: 14px 18px;
     font-size: 16px;
-    width: 140px;
+    width: 160px;
+    margin: 0;
 }
 
 .manual-entry .manual-input.invalid {
-    border-color: #cc0000;
+    border-color: #e74c3c;
+    box-shadow: 0 0 0 4px rgba(231, 76, 60, 0.1);
 }
 
 .visually-hidden { position:absolute!important;height:1px;width:1px;overflow:hidden;clip:rect(1px,1px,1px,1px);white-space:nowrap;border:0;padding:0;margin:-1px }
@@ -121,34 +139,38 @@ video {
 
 .scan-box {
     position: absolute;
-    width: 85%;
-    height: 80px;
-    top: 50%;
+    width: 60%; /* narrower box to focus only on digits */
+    height: 50px; /* tight height to include only the number line */
+    bottom: 38%; /* place slightly above center to match typical ID layout */
     left: 50%;
-    transform: translate(-50%, -50%);
+    transform: translateX(-50%);
     border: 3px solid #00ccff;
-    box-shadow: 0 0 15px #00ccff, inset 0 0 15px rgba(0,204,255,0.2);
-    background: rgba(0,0,0,0);
+    box-shadow: 0 0 15px #00ccff, inset 0 0 12px rgba(0,204,255,0.12);
+    background: rgba(0,0,0,0.15);
     pointer-events: none;
     z-index: 5;
+    border-radius: 8px;
 }
 
 .result {
-    margin-top: 20px;
-    background: #eef2ff;
-    padding: 15px;
-    border-radius: 10px;
-    font-size: 16px;
+    margin-top: 18px;
+    background: linear-gradient(135deg, #f5f7fa 0%, #eef2ff 100%);
+    padding: 18px;
+    border-radius: 12px;
+    font-size: 17px;
     display: none;
+    border-left: 4px solid #667eea;
+    box-shadow: 0 4px 12px rgba(0, 0, 0, 0.06);
+    line-height: 1.6;
 }
 
 .loader {
-    border: 6px solid #f3f3f3;
-    border-top: 6px solid #0066ff;
+    border: 5px solid #f0f0f0;
+    border-top: 5px solid #667eea;
     border-radius: 50%;
-    width: 45px;
-    height: 45px;
-    margin: 20px auto;
+    width: 48px;
+    height: 48px;
+    margin: 24px auto;
     animation: spin 0.8s linear infinite;
 }
 

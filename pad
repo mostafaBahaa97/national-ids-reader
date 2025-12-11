@@ -1,0 +1,8 @@
+To Add a New User:
+sqlINSERT INTO users (username, password) VALUES ('newuser', 'password123');
+To Disable a User (prevent login):
+sqlUPDATE users SET is_active = false WHERE username = 'ahmed';
+To Re-enable a User:
+sqlUPDATE users SET is_active = true WHERE username = 'ahmed';
+To Delete a User:
+sqlDELETE FROM users WHERE username = 'ahmed';

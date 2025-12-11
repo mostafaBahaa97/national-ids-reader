@@ -3,7 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>مسح البطاقة الوطنية</title>
+  <title>مسح بطاقة الرقم القومى</title>
   <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
   <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5"></script>
   <style>
@@ -327,7 +327,7 @@
 
         <div class="tab-buttons">
           <button class="tab-btn active" onclick="switchTab('manual')">إدخال يدوي</button>
-          <button class="tab-btn" onclick="switchTab('scan')">مسح ضوئي</button>
+          <!-- <button class="tab-btn" onclick="switchTab('scan')">مسح ضوئي</button> -->
         </div>
 
         <!-- Manual Entry Tab -->
@@ -340,7 +340,7 @@
         </div>
 
         <!-- Scan Tab -->
-        <div id="scan-tab" class="tab-content">
+        <!-- <div id="scan-tab" class="tab-content">
           <div class="camera-controls">
             <button class="control-btn" id="cameraBtn" onclick="toggleCamera()">📷 فتح الكاميرا</button>
             <button class="control-btn" id="flashBtn" onclick="toggleFlash()" disabled>🔦 الفلاش</button>
@@ -352,7 +352,7 @@
           </div>
 
           <div id="scanningStatus"></div>
-        </div>
+        </div> -->
       </div>
     </div>
   </div>
@@ -367,6 +367,45 @@
     let isScanning = false;
     let flashEnabled = false;
     let currentUser = null;
+    
+    // =====================
+    // INACTIVITY MANAGEMENT
+    // =====================
+    const INACTIVITY_TIMEOUT = 5 * 60 * 1000; // 5 minutes
+    let inactivityTimer = null;
+    let isUserActive = true;
+    let lastActivityTime = Date.now();
+
+    // Track user activity
+    function resetActivityTimer() {
+      if (!currentUser) return; // Only track when user is logged in
+      
+      lastActivityTime = Date.now();
+      isUserActive = true;
+      
+      // Clear existing timer
+      if (inactivityTimer) {
+        clearTimeout(inactivityTimer);
+      }
+
+      // Set new timeout for inactivity
+      inactivityTimer = setTimeout(() => {
+        isUserActive = false;
+        handleInactivity();
+      }, INACTIVITY_TIMEOUT);
+    }
+
+    function handleInactivity() {
+      isUserActive = false;
+      showStatus('⚠️ انتهت جلستك بسبب عدم النشاط. يرجى تسجيل الدخول مرة أخرى', 'error');
+      logout();
+    }
+
+    // Add activity listeners
+    document.addEventListener('click', resetActivityTimer);
+    document.addEventListener('keydown', resetActivityTimer);
+    document.addEventListener('mousemove', resetActivityTimer);
+    document.addEventListener('touchstart', resetActivityTimer);
 
     // Check if user is already logged in
     window.onload = () => {
@@ -374,6 +413,7 @@
       if (savedUser) {
         currentUser = savedUser;
         showMainApp();
+        resetActivityTimer();
       }
     };
 
@@ -383,6 +423,12 @@
 
       if (!username || !password) {
         showStatus('الرجاء إدخال اسم المستخدم وكلمة المرور', 'error');
+        return;
+      }
+
+      // Prevent login if user is inactive
+      if (!isUserActive) {
+        showStatus('🔒 جلستك معطلة بسبب عدم النشاط. يرجى تحديث الصفحة', 'error');
         return;
       }
 
@@ -406,8 +452,11 @@
         }
 
         currentUser = username;
+        isUserActive = true;
+        lastActivityTime = Date.now();
         localStorage.setItem('currentUser', username);
         showMainApp();
+        resetActivityTimer();
         showStatus('تم تسجيل الدخول بنجاح', 'success');
       } catch (error) {
         console.error(error);
@@ -417,6 +466,11 @@
 
     function logout() {
       currentUser = null;
+      isUserActive = true;
+      if (inactivityTimer) {
+        clearTimeout(inactivityTimer);
+        inactivityTimer = null;
+      }
       localStorage.removeItem('currentUser');
       document.getElementById('auth-container').classList.add('active');
       document.getElementById('main-container').classList.remove('active');
@@ -485,6 +539,13 @@
     }
 
     async function submitManual() {
+      // Check if user is inactive
+      if (!isUserActive) {
+        showStatus('🔒 جلستك معطلة بسبب عدم النشاط. يرجى تسجيل الدخول مرة أخرى', 'error');
+        logout();
+        return;
+      }
+
       const idNumber = document.getElementById('nationalId').value.trim();
 
       if (!validateNationalId(idNumber)) {
@@ -508,127 +569,128 @@
       }
     }
 
-    async function toggleCamera() {
-      const cameraBtn = document.getElementById('cameraBtn');
-      const flashBtn = document.getElementById('flashBtn');
-      const cameraContainer = document.getElementById('cameraContainer');
-      const video = document.getElementById('video');
+    // async function toggleCamera() {
+    //   const cameraBtn = document.getElementById('cameraBtn');
+    //   const flashBtn = document.getElementById('flashBtn');
+    //   const cameraContainer = document.getElementById('cameraContainer');
+    //   const video = document.getElementById('video');
 
-      if (stream) {
-        stopCamera();
-        return;
-      }
+    //   if (stream) {
+    //     stopCamera();
+    //     return;
+    //   }
 
-      try {
-        stream = await navigator.mediaDevices.getUserMedia({
-          video: { facingMode: 'environment' },
-          audio: false
-        });
+    //   try {
+    //     stream = await navigator.mediaDevices.getUserMedia({
+    //       video: { facingMode: 'environment' },
+    //       audio: false
+    //     });
 
-        video.srcObject = stream;
-        cameraContainer.style.display = 'block';
-        cameraBtn.textContent = '⏹️ إيقاف الكاميرا';
-        cameraBtn.classList.add('active');
-        flashBtn.disabled = false;
+    //     video.srcObject = stream;
+    //     cameraContainer.style.display = 'block';
+    //     cameraBtn.textContent = '⏹️ إيقاف الكاميرا';
+    //     cameraBtn.classList.add('active');
+    //     flashBtn.disabled = false;
 
-        startScanning();
-      } catch (error) {
-        console.error(error);
-        showStatus('لا يمكن الوصول للكاميرا', 'error');
-      }
-    }
+    //     startScanning();
+    //   } catch (error) {
+    //     console.error(error);
+    //     showStatus('لا يمكن الوصول للكاميرا', 'error');
+    //   }
+    // }
 
-    function stopCamera() {
-      if (stream) {
-        stream.getTracks().forEach(track => track.stop());
-        stream = null;
-      }
+    // function stopCamera() {
+    //   if (stream) {
+    //     stream.getTracks().forEach(track => track.stop());
+    //     stream = null;
+    //   }
 
-      if (scanInterval) {
-        clearInterval(scanInterval);
-        scanInterval = null;
-      }
+    //   if (scanInterval) {
+    //     clearInterval(scanInterval);
+    //     scanInterval = null;
+    //   }
 
-      document.getElementById('cameraContainer').style.display = 'none';
-      document.getElementById('cameraBtn').textContent = '📷 فتح الكاميرا';
-      document.getElementById('cameraBtn').classList.remove('active');
-      document.getElementById('flashBtn').disabled = true;
-      document.getElementById('flashBtn').classList.remove('active');
-      document.getElementById('scanningStatus').innerHTML = '';
-      isScanning = false;
-      flashEnabled = false;
-    }
+    //   document.getElementById('cameraContainer').style.display = 'none';
+    //   document.getElementById('cameraBtn').textContent = '📷 فتح الكاميرا';
+    //   document.getElementById('cameraBtn').classList.remove('active');
+    //   document.getElementById('flashBtn').disabled = true;
+    //   document.getElementById('flashBtn').classList.remove('active');
+    //   document.getElementById('scanningStatus').innerHTML = '';
+    //   isScanning = false;
+    //   flashEnabled = false;
+    // }
 
-    function toggleFlash() {
-      const flashBtn = document.getElementById('flashBtn');
-      if (!stream) return;
+    // function toggleFlash() {
+    //   const flashBtn = document.getElementById('flashBtn');
+    //   if (!stream) return;
 
-      const track = stream.getVideoTracks()[0];
-      const capabilities = track.getCapabilities();
+    //   const track = stream.getVideoTracks()[0];
+    //   const capabilities = track.getCapabilities();
 
-      if (capabilities.torch) {
-        flashEnabled = !flashEnabled;
-        track.applyConstraints({
-          advanced: [{ torch: flashEnabled }]
-        });
-        flashBtn.classList.toggle('active');
-      } else {
-        showStatus('الفلاش غير مدعوم على هذا الجهاز', 'error');
-      }
-    }
+    //   if (capabilities.torch) {
+    //     flashEnabled = !flashEnabled;
+    //     track.applyConstraints({
+    //       advanced: [{ torch: flashEnabled }]
+    //     });
+    //     flashBtn.classList.toggle('active');
+    //   } else {
+    //     showStatus('الفلاش غير مدعوم على هذا الجهاز', 'error');
+    //   }
+    // }
 
-    function startScanning() {
-      const statusDiv = document.getElementById('scanningStatus');
-      statusDiv.innerHTML = '<div class="scanning-indicator"><div class="spinner"></div>جاري المسح...</div>';
+    // function startScanning() {
+    //   const statusDiv = document.getElementById('scanningStatus');
+    //   statusDiv.innerHTML = '<div class="scanning-indicator"><div class="spinner"></div>جاري المسح...</div>';
 
-      scanInterval = setInterval(async () => {
-        if (isScanning) return;
-        await scanImage();
-      }, 5000);
-    }
+    //   scanInterval = setInterval(async () => {
+    //     if (isScanning) return;
+    //     await scanImage();
+    //   }, 5000);
+    // }
 
-    async function scanImage() {
-      isScanning = true;
-      const video = document.getElementById('video');
-      const canvas = document.getElementById('canvas');
-      const ctx = canvas.getContext('2d');
+    // async function scanImage() {
+    //   isScanning = true;
+    //   const video = document.getElementById('video');
+    //   const canvas = document.getElementById('canvas');
+    //   const ctx = canvas.getContext('2d');
 
-      canvas.width = video.videoWidth;
-      canvas.height = video.videoHeight;
-      ctx.drawImage(video, 0, 0);
+    //   canvas.width = video.videoWidth;
+    //   canvas.height = video.videoHeight;
+    //   ctx.drawImage(video, 0, 0);
 
-      try {
-        const result = await Tesseract.recognize(
-          canvas,
-          'eng',
-          {
-            logger: m => console.log(m)
-          }
-        );
+    //   try {
+    //     const result = await Tesseract.recognize(
+    //       canvas,
+    //       'eng',
+    //       {
+    //         logger: m => console.log(m)
+    //       }
+    //     );
 
-        const text = result.data.text.replace(/\s/g, '');
-        const matches = text.match(/[123]\d{13}/g);
+    //     const text = result.data.text.replace(/\s/g, '');
+    //     const matches = text.match(/[123]\d{13}/g);
 
-        if (matches && matches.length > 0) {
-          const idNumber = matches[0];
+    //     if (matches && matches.length > 0) {
+    //       const idNumber = matches[0];
 
-          const duplicate = await checkDuplicate(idNumber);
-          if (duplicate) {
-            showStatus(`هذا الرقم مسجل من قبل: ${duplicate.username}`, 'error');
-            isScanning = false;
-            return;
-          }
+    //       const duplicate = await checkDuplicate(idNumber);
+    //       if (duplicate) {
+    //         showStatus(`هذا الرقم مسجل من قبل: ${duplicate.username}`, 'error');
+    //         isScanning = false;
+    //         return;
+    //       }
 
-          await saveToDatabase(idNumber);
-          showStatus(`✅ تم حفظ الرقم: ${idNumber}`, 'success');
-          stopCamera();
-        }
-      } catch (error) {
-        console.error(error);
-      }
+    //       await saveToDatabase(idNumber);
+    //       showStatus(`✅ تم حفظ الرقم: ${idNumber}`, 'success');
+    //       stopCamera();
+    //     }
+    //   } catch (error) {
+    //     console.error(error);
+    //   }
 
-      isScanning = false;
-    }
+    //   isScanning = false;
+    // }
+  
   </script>
 </body>
 </html>

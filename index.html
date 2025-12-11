@@ -1,40 +1,634 @@
 <!DOCTYPE html>
-<html lang="ar">
+<html lang="ar" dir="rtl">
 <head>
-<meta charset="UTF-8">
-<title>ماسح الرقم القومي</title>
-<link rel="stylesheet" href="style.css">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
-<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>مسح البطاقة الوطنية</title>
+  <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+  <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5"></script>
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+    }
+
+    body {
+      font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      min-height: 100vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 15px;
+      direction: rtl;
+    }
+
+    .container {
+      width: 100%;
+      max-width: 450px;
+      background: white;
+      border-radius: 20px;
+      box-shadow: 0 20px 60px rgba(0,0,0,0.3);
+      overflow: hidden;
+    }
+
+    .header {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+      padding: 25px 20px;
+      text-align: center;
+    }
+
+    .header h1 {
+      font-size: 24px;
+      margin-bottom: 8px;
+    }
+
+    .header p {
+      font-size: 14px;
+      opacity: 0.9;
+    }
+
+    .content {
+      padding: 25px 20px;
+    }
+
+    .auth-container, .main-container {
+      display: none;
+    }
+
+    .auth-container.active, .main-container.active {
+      display: block;
+    }
+
+    .form-group {
+      margin-bottom: 18px;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 8px;
+      font-weight: bold;
+      color: #333;
+      font-size: 14px;
+    }
+
+    input[type="text"],
+    input[type="password"] {
+      width: 100%;
+      padding: 12px;
+      border: 2px solid #ddd;
+      border-radius: 8px;
+      font-size: 16px;
+      transition: border 0.3s;
+    }
+
+    input[type="text"]:focus,
+    input[type="password"]:focus {
+      outline: none;
+      border-color: #667eea;
+    }
+
+    .btn {
+      width: 100%;
+      padding: 14px;
+      border: none;
+      border-radius: 10px;
+      font-size: 16px;
+      font-weight: bold;
+      cursor: pointer;
+      transition: all 0.3s;
+    }
+
+    .btn-primary {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .btn-primary:hover {
+      transform: translateY(-2px);
+      box-shadow: 0 5px 15px rgba(102, 126, 234, 0.4);
+    }
+
+    .btn-primary:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+      transform: none;
+    }
+
+    .btn-secondary {
+      background: white;
+      color: #667eea;
+      border: 2px solid #667eea;
+      margin-top: 10px;
+      font-size: 14px;
+      padding: 10px;
+    }
+
+    .tab-buttons {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 25px;
+    }
+
+    .tab-btn {
+      flex: 1;
+      padding: 12px;
+      border: none;
+      background: #f0f0f0;
+      border-radius: 10px;
+      cursor: pointer;
+      font-size: 15px;
+      font-weight: bold;
+      transition: all 0.3s;
+    }
+
+    .tab-btn.active {
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    .tab-content {
+      display: none;
+    }
+
+    .tab-content.active {
+      display: block;
+    }
+
+    .camera-container {
+      position: relative;
+      margin-bottom: 18px;
+      border-radius: 10px;
+      overflow: hidden;
+      background: #000;
+      width: 100%;
+    }
+
+    video {
+      width: 100%;
+      display: block;
+      max-height: 400px;
+      object-fit: cover;
+    }
+
+    canvas {
+      display: none;
+    }
+
+    .camera-controls {
+      display: flex;
+      gap: 10px;
+      margin-bottom: 18px;
+    }
+
+    .control-btn {
+      flex: 1;
+      padding: 10px;
+      border: 2px solid #667eea;
+      background: white;
+      color: #667eea;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: bold;
+      transition: all 0.3s;
+      font-size: 14px;
+    }
+
+    .control-btn.active {
+      background: #667eea;
+      color: white;
+    }
+
+    .status {
+      padding: 12px;
+      border-radius: 10px;
+      margin-bottom: 18px;
+      text-align: center;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    .status.success {
+      background: #d4edda;
+      color: #155724;
+      border: 2px solid #c3e6cb;
+    }
+
+    .status.error {
+      background: #f8d7da;
+      color: #721c24;
+      border: 2px solid #f5c6cb;
+    }
+
+    .status.info {
+      background: #d1ecf1;
+      color: #0c5460;
+      border: 2px solid #bee5eb;
+    }
+
+    .scanning-indicator {
+      text-align: center;
+      padding: 18px;
+      color: #667eea;
+      font-weight: bold;
+      font-size: 14px;
+    }
+
+    .spinner {
+      border: 4px solid #f3f3f3;
+      border-top: 4px solid #667eea;
+      border-radius: 50%;
+      width: 35px;
+      height: 35px;
+      animation: spin 1s linear infinite;
+      margin: 0 auto 10px;
+    }
+
+    @keyframes spin {
+      0% { transform: rotate(0deg); }
+      100% { transform: rotate(360deg); }
+    }
+
+    .user-info {
+      background: #f8f9fa;
+      padding: 12px;
+      border-radius: 8px;
+      margin-bottom: 18px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .user-info span {
+      font-weight: bold;
+      color: #667eea;
+      font-size: 14px;
+    }
+
+    @media (max-width: 480px) {
+      .container {
+        max-width: 100%;
+      }
+
+      .header h1 {
+        font-size: 20px;
+      }
+
+      .header p {
+        font-size: 13px;
+      }
+
+      .content {
+        padding: 20px 15px;
+      }
+
+      .btn, .tab-btn {
+        font-size: 14px;
+        padding: 12px;
+      }
+
+      video {
+        max-height: 300px;
+      }
+    }
+  </style>
 </head>
 <body>
-<div class="container">
-    <h1>ماسح الرقم القومي</h1>
-
-    <!-- زر فتح الكاميرا -->
-    <button id="startCameraBtn">فتح الكاميرا</button>
-
-    <div class="card-camera">
-        <video id="camera" autoplay playsinline></video>
-        <div class="scan-box"></div>
-        <button id="switchCameraBtn" class="switch-camera-btn" style="display:none;">🔄</button>
-        <button id="flashlightBtn" class="flashlight-btn" style="display:none;">💡</button>
+  <div class="container">
+    <div class="header">
+      <h1>📱 مسح البطاقة الوطنية</h1>
+      <p>نظام تسجيل الأرقام الوطنية</p>
     </div>
 
-    <div class="button-group">
-        <button id="captureBtn">التقاط الرقم</button>
-    </div>
-    <div class="manual-entry">
-        <label for="manualIdInput" class="visually-hidden">الرقم القومي</label>
-        <input id="manualIdInput" class="manual-input" placeholder="أدخل الرقم القومي (14 رقمًا)" maxlength="14" inputmode="numeric" pattern="[1-3][0-9]{13}" autocomplete="off" />
-        <button id="manualAddBtn">إضافة يدويًا</button>
-    </div>
-    <div id="manualError" class="error-message" style="display:none; color:red; font-size:0.9em; margin-top:4px;">الرقم القومى خطا</div>
-    <div id="loader" class="loader" style="display:none;"></div>
-    <div id="resultBox" class="result"></div>
-</div>
+    <div class="content">
+      <div id="statusMsg"></div>
 
-<canvas id="canvas" style="display:none;"></canvas>
-<script src="script.js"></script>
+      <!-- Login Container -->
+      <div id="auth-container" class="auth-container active">
+        <div class="form-group">
+          <label>اسم المستخدم:</label>
+          <input type="text" id="login-username" placeholder="أدخل اسم المستخدم">
+        </div>
+        <div class="form-group">
+          <label>كلمة المرور:</label>
+          <input type="password" id="login-password" placeholder="أدخل كلمة المرور">
+        </div>
+        <button class="btn btn-primary" onclick="login()">تسجيل الدخول</button>
+      </div>
+
+      <!-- Main App Container -->
+      <div id="main-container" class="main-container">
+        <div class="user-info">
+          <span id="current-user"></span>
+          <button class="btn-secondary" onclick="logout()">تسجيل الخروج</button>
+        </div>
+
+        <div class="tab-buttons">
+          <button class="tab-btn active" onclick="switchTab('manual')">إدخال يدوي</button>
+          <button class="tab-btn" onclick="switchTab('scan')">مسح ضوئي</button>
+        </div>
+
+        <!-- Manual Entry Tab -->
+        <div id="manual-tab" class="tab-content active">
+          <div class="form-group">
+            <label>الرقم الوطني (14 رقم):</label>
+            <input type="text" id="nationalId" placeholder="1XXXXXXXXXXXXX" maxlength="14">
+          </div>
+          <button class="btn btn-primary" onclick="submitManual()">حفظ الرقم</button>
+        </div>
+
+        <!-- Scan Tab -->
+        <div id="scan-tab" class="tab-content">
+          <div class="camera-controls">
+            <button class="control-btn" id="cameraBtn" onclick="toggleCamera()">📷 فتح الكاميرا</button>
+            <button class="control-btn" id="flashBtn" onclick="toggleFlash()" disabled>🔦 الفلاش</button>
+          </div>
+
+          <div class="camera-container" id="cameraContainer" style="display:none;">
+            <video id="video" autoplay playsinline></video>
+            <canvas id="canvas"></canvas>
+          </div>
+
+          <div id="scanningStatus"></div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    const SUPABASE_URL = "https://mqjpmefyntbmsmhwedef.supabase.co";
+    const SUPABASE_KEY = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6Im1xanBtZWZ5bnRibXNtaHdlZGVmIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NjUyODQ0NjUsImV4cCI6MjA4MDg2MDQ2NX0.4Y1S-B4BRku2Yin-6Bdm2CKpXgoN0BK5HO3UFj81hBA";
+    const supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
+
+    let stream = null;
+    let scanInterval = null;
+    let isScanning = false;
+    let flashEnabled = false;
+    let currentUser = null;
+
+    // Check if user is already logged in
+    window.onload = () => {
+      const savedUser = localStorage.getItem('currentUser');
+      if (savedUser) {
+        currentUser = savedUser;
+        showMainApp();
+      }
+    };
+
+    async function login() {
+      const username = document.getElementById('login-username').value.trim();
+      const password = document.getElementById('login-password').value.trim();
+
+      if (!username || !password) {
+        showStatus('الرجاء إدخال اسم المستخدم وكلمة المرور', 'error');
+        return;
+      }
+
+      try {
+        // Check user credentials from users table
+        const { data, error } = await supabase
+          .from('users')
+          .select('username, password, is_active')
+          .eq('username', username)
+          .eq('password', password)
+          .single();
+
+        if (error || !data) {
+          showStatus('اسم المستخدم أو كلمة المرور غير صحيحة', 'error');
+          return;
+        }
+
+        if (!data.is_active) {
+          showStatus('هذا الحساب معطل. يرجى الاتصال بالمسؤول', 'error');
+          return;
+        }
+
+        currentUser = username;
+        localStorage.setItem('currentUser', username);
+        showMainApp();
+        showStatus('تم تسجيل الدخول بنجاح', 'success');
+      } catch (error) {
+        console.error(error);
+        showStatus('حدث خطأ أثناء تسجيل الدخول', 'error');
+      }
+    }
+
+    function logout() {
+      currentUser = null;
+      localStorage.removeItem('currentUser');
+      document.getElementById('auth-container').classList.add('active');
+      document.getElementById('main-container').classList.remove('active');
+      document.getElementById('login-username').value = '';
+      document.getElementById('login-password').value = '';
+      showStatus('تم تسجيل الخروج', 'info');
+      
+      if (stream) {
+        stopCamera();
+      }
+    }
+
+    function showMainApp() {
+      document.getElementById('auth-container').classList.remove('active');
+      document.getElementById('main-container').classList.add('active');
+      document.getElementById('current-user').textContent = `مرحباً: ${currentUser}`;
+    }
+
+    function switchTab(tab) {
+      document.querySelectorAll('.tab-btn').forEach(btn => btn.classList.remove('active'));
+      document.querySelectorAll('.tab-content').forEach(content => content.classList.remove('active'));
+      
+      event.target.classList.add('active');
+      document.getElementById(tab + '-tab').classList.add('active');
+
+      if (tab === 'manual' && stream) {
+        stopCamera();
+      }
+    }
+
+    function showStatus(message, type) {
+      const statusDiv = document.getElementById('statusMsg');
+      statusDiv.innerHTML = `<div class="status ${type}">${message}</div>`;
+      setTimeout(() => statusDiv.innerHTML = '', 5000);
+    }
+
+    function validateNationalId(id) {
+      if (id.length !== 14) return false;
+      if (!/^[123]\d{13}$/.test(id)) return false;
+      return true;
+    }
+
+    async function checkDuplicate(idNumber) {
+      const { data, error } = await supabase
+        .from('national_id')
+        .select('id_number, username')
+        .eq('id_number', idNumber);
+
+      if (error) throw error;
+      return data.length > 0 ? data[0] : null;
+    }
+
+    async function saveToDatabase(idNumber) {
+      const { data, error } = await supabase
+        .from('national_id')
+        .insert([
+          { 
+            id_number: idNumber,
+            username: currentUser,
+            created_at: new Date().toISOString()
+          }
+        ]);
+
+      if (error) throw error;
+      return data;
+    }
+
+    async function submitManual() {
+      const idNumber = document.getElementById('nationalId').value.trim();
+
+      if (!validateNationalId(idNumber)) {
+        showStatus('الرقم الوطني غير صحيح. يجب أن يكون 14 رقم ويبدأ بـ 1 أو 2 أو 3', 'error');
+        return;
+      }
+
+      try {
+        const duplicate = await checkDuplicate(idNumber);
+        if (duplicate) {
+          showStatus(`هذا الرقم مسجل من قبل: ${duplicate.username}`, 'error');
+          return;
+        }
+
+        await saveToDatabase(idNumber);
+        showStatus('✅ تم حفظ الرقم بنجاح!', 'success');
+        document.getElementById('nationalId').value = '';
+      } catch (error) {
+        console.error(error);
+        showStatus('حدث خطأ أثناء الحفظ', 'error');
+      }
+    }
+
+    async function toggleCamera() {
+      const cameraBtn = document.getElementById('cameraBtn');
+      const flashBtn = document.getElementById('flashBtn');
+      const cameraContainer = document.getElementById('cameraContainer');
+      const video = document.getElementById('video');
+
+      if (stream) {
+        stopCamera();
+        return;
+      }
+
+      try {
+        stream = await navigator.mediaDevices.getUserMedia({
+          video: { facingMode: 'environment' },
+          audio: false
+        });
+
+        video.srcObject = stream;
+        cameraContainer.style.display = 'block';
+        cameraBtn.textContent = '⏹️ إيقاف الكاميرا';
+        cameraBtn.classList.add('active');
+        flashBtn.disabled = false;
+
+        startScanning();
+      } catch (error) {
+        console.error(error);
+        showStatus('لا يمكن الوصول للكاميرا', 'error');
+      }
+    }
+
+    function stopCamera() {
+      if (stream) {
+        stream.getTracks().forEach(track => track.stop());
+        stream = null;
+      }
+
+      if (scanInterval) {
+        clearInterval(scanInterval);
+        scanInterval = null;
+      }
+
+      document.getElementById('cameraContainer').style.display = 'none';
+      document.getElementById('cameraBtn').textContent = '📷 فتح الكاميرا';
+      document.getElementById('cameraBtn').classList.remove('active');
+      document.getElementById('flashBtn').disabled = true;
+      document.getElementById('flashBtn').classList.remove('active');
+      document.getElementById('scanningStatus').innerHTML = '';
+      isScanning = false;
+      flashEnabled = false;
+    }
+
+    function toggleFlash() {
+      const flashBtn = document.getElementById('flashBtn');
+      if (!stream) return;
+
+      const track = stream.getVideoTracks()[0];
+      const capabilities = track.getCapabilities();
+
+      if (capabilities.torch) {
+        flashEnabled = !flashEnabled;
+        track.applyConstraints({
+          advanced: [{ torch: flashEnabled }]
+        });
+        flashBtn.classList.toggle('active');
+      } else {
+        showStatus('الفلاش غير مدعوم على هذا الجهاز', 'error');
+      }
+    }
+
+    function startScanning() {
+      const statusDiv = document.getElementById('scanningStatus');
+      statusDiv.innerHTML = '<div class="scanning-indicator"><div class="spinner"></div>جاري المسح...</div>';
+
+      scanInterval = setInterval(async () => {
+        if (isScanning) return;
+        await scanImage();
+      }, 5000);
+    }
+
+    async function scanImage() {
+      isScanning = true;
+      const video = document.getElementById('video');
+      const canvas = document.getElementById('canvas');
+      const ctx = canvas.getContext('2d');
+
+      canvas.width = video.videoWidth;
+      canvas.height = video.videoHeight;
+      ctx.drawImage(video, 0, 0);
+
+      try {
+        const result = await Tesseract.recognize(
+          canvas,
+          'eng',
+          {
+            logger: m => console.log(m)
+          }
+        );
+
+        const text = result.data.text.replace(/\s/g, '');
+        const matches = text.match(/[123]\d{13}/g);
+
+        if (matches && matches.length > 0) {
+          const idNumber = matches[0];
+
+          const duplicate = await checkDuplicate(idNumber);
+          if (duplicate) {
+            showStatus(`هذا الرقم مسجل من قبل: ${duplicate.username}`, 'error');
+            isScanning = false;
+            return;
+          }
+
+          await saveToDatabase(idNumber);
+          showStatus(`✅ تم حفظ الرقم: ${idNumber}`, 'success');
+          stopCamera();
+        }
+      } catch (error) {
+        console.error(error);
+      }
+
+      isScanning = false;
+    }
+  </script>
 </body>
 </html>
